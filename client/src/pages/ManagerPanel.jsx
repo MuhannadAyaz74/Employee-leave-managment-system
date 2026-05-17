@@ -13,6 +13,11 @@ const ManagerPanel = () => {
   const [selectedLeaveId, setSelectedLeaveId] = useState(null);
   const [rejectComment, setRejectComment] = useState('');
 
+  // For approval comment modal
+  const [showApproveModal, setShowApproveModal] = useState(false);
+  const [approveLeaveId, setApproveLeaveId] = useState(null);
+  const [approveComment, setApproveComment] = useState('');
+
   const fetchPendingLeaves = async () => {
     try {
       const { data } = await api.get('/leaves/pending');
@@ -28,18 +33,24 @@ const ManagerPanel = () => {
     fetchPendingLeaves();
   }, []);
 
-  const handleApprove = async (id) => {
-    if (window.confirm('Are you sure you want to approve this leave?')) {
-      setProcessingId(id);
-      try {
-        await api.put(`/leaves/${id}/approve`);
-        toast.success('Leave approved');
-        setPendingLeaves(pendingLeaves.filter(leave => leave.id !== id));
-      } catch (error) {
-        toast.error(error.response?.data?.message || 'Failed to approve leave');
-      } finally {
-        setProcessingId(null);
-      }
+  const openApproveModal = (id) => {
+    setApproveLeaveId(id);
+    setApproveComment('');
+    setShowApproveModal(true);
+  };
+
+  const handleApproveSubmit = async (e) => {
+    e.preventDefault();
+    setProcessingId(approveLeaveId);
+    try {
+      await api.put(`/leaves/${approveLeaveId}/approve`, { manager_comment: approveComment });
+      toast.success('Leave approved');
+      setPendingLeaves(pendingLeaves.filter(leave => leave.id !== approveLeaveId));
+      setShowApproveModal(false);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to approve leave');
+    } finally {
+      setProcessingId(null);
     }
   };
 
@@ -96,7 +107,7 @@ const ManagerPanel = () => {
                   
                   <div className="flex gap-3 mt-4 md:mt-0">
                     <button
-                      onClick={() => handleApprove(leave.id)}
+                      onClick={() => openApproveModal(leave.id)}
                       disabled={processingId === leave.id}
                       className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition disabled:opacity-50 cursor-pointer"
                     >
@@ -114,6 +125,45 @@ const ManagerPanel = () => {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* Approve Modal */}
+      {showApproveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <h3 className="text-lg font-bold mb-4 text-gray-800">Approve Leave</h3>
+            <form onSubmit={handleApproveSubmit}>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Approval Comment (Optional)
+                </label>
+                <textarea
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-green-500 focus:border-green-500 bg-white text-gray-900"
+                  rows="3"
+                  value={approveComment}
+                  onChange={(e) => setApproveComment(e.target.value)}
+                  placeholder="Add a note for the employee (optional)"
+                ></textarea>
+              </div>
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowApproveModal(false)}
+                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={processingId === approveLeaveId}
+                  className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition disabled:opacity-50 cursor-pointer"
+                >
+                  Confirm Approval
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

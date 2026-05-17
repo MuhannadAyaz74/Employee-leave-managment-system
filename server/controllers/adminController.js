@@ -28,21 +28,44 @@ const getUsers = async (req, res) => {
 
 const createUser = async (req, res) => {
   if (!checkAdmin(req, res)) return;
+  const connection = await pool.getConnection();
   try {
     const { name, email, password, role, manager_id } = req.body;
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-    
-    await pool.execute(
+
+    await connection.beginTransaction();
+
+    // Create the user
+    const [result] = await connection.execute(
       'INSERT INTO users (name, email, password, role, manager_id) VALUES (?, ?, ?, ?, ?)',
       [name, email, hashedPassword, role, manager_id || null]
     );
-    res.status(201).json({ message: 'User created successfully' });
+    const newUserId = result.insertId;
+
+    // Auto-initialize leave_balance for every existing leave type
+    // Default quotas: Annual=20, Sick=10, Casual=7, Unpaid=30
+    const defaultQuotas = { 'Annual Leave': 20, 'Sick Leave': 10, 'Casual Leave': 7, 'Unpaid Leave': 30 };
+    const [leaveTypes] = await connection.execute('SELECT id, name FROM leave_types');
+
+    for (const lt of leaveTypes) {
+      const quota = defaultQuotas[lt.name] ?? 15; // fallback: 15 days
+      await connection.execute(
+        'INSERT INTO leave_balance (user_id, leave_type_id, total_leaves, used_leaves) VALUES (?, ?, ?, 0)',
+        [newUserId, lt.id, quota]
+      );
+    }
+
+    await connection.commit();
+    res.status(201).json({ message: 'User created successfully with leave balances initialized' });
   } catch (error) {
+    await connection.rollback();
     if (error.code === 'ER_DUP_ENTRY') {
       return res.status(400).json({ message: 'Email already exists' });
     }
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
   }
 };
 

@@ -221,6 +221,7 @@ const approveLeave = async (req, res) => {
   try {
     const leaveId = req.params.id;
     const managerId = req.user.id;
+    const { manager_comment } = req.body; // ← NEW: optional comment
 
     if (req.user.role !== 'manager' && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Unauthorized' });
@@ -242,10 +243,10 @@ const approveLeave = async (req, res) => {
 
     await connection.beginTransaction();
 
-    // Update leave status
+    // Update leave status (+ save manager_comment if provided)
     await connection.execute(
-      'UPDATE leaves SET status = ? WHERE id = ?',
-      ['approved', leaveId]
+      'UPDATE leaves SET status = ?, manager_comment = ? WHERE id = ?',
+      ['approved', manager_comment || null, leaveId]
     );
 
     // Deduct leave balance
@@ -254,10 +255,10 @@ const approveLeave = async (req, res) => {
       [leaves[0].total_days, leaves[0].user_id, leaves[0].leave_type_id]
     );
 
-    // Add log
+    // Add log (include the comment)
     await connection.execute(
       'INSERT INTO leave_logs (leave_id, action, action_by, comment) VALUES (?, ?, ?, ?)',
-      [leaveId, 'approved', managerId, 'Leave approved by manager']
+      [leaveId, 'approved', managerId, manager_comment || 'Leave approved by manager']
     );
 
     // Notify employee
